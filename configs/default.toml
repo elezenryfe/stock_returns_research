@@ -24,3 +24,13 @@ max_reported_issues = 20
 n_securities = 8
 n_days = 260
 start_date = "2023-01-02"
+
+[ingestion]
+# Immutable raw provider responses and the latest normalized snapshot.
+raw_dir = "data/raw"
+normalized_dir = "data/normalized"
+# Total attempts per HTTP request (1 = no retries).
+max_attempts = 3
+# Exponential backoff base in seconds between attempts.
+retry_backoff_seconds = 0.5
+timeout_seconds = 30.0

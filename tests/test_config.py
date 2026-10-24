@@ -24,6 +24,11 @@ def test_project_config_loads(config_path: Path) -> None:
     assert config.synthetic.n_securities == 8
     assert config.synthetic.n_days == 260
     assert config.synthetic.start_date == "2023-01-02"
+    assert config.ingestion.raw_dir == Path("data/raw")
+    assert config.ingestion.normalized_dir == Path("data/normalized")
+    assert config.ingestion.max_attempts == 3
+    assert config.ingestion.retry_backoff_seconds == 0.5
+    assert config.ingestion.timeout_seconds == 30.0
     assert config.source_path == config_path
 
 
@@ -36,6 +41,15 @@ def test_empty_config_uses_documented_defaults(tmp_path: Path) -> None:
     assert config.log_level == "INFO"
     assert config.validation.min_price == 0.01
     assert config.synthetic.n_securities == 8
+    assert config.ingestion.raw_dir == Path("data/raw")
+    assert config.ingestion.normalized_dir == Path("data/normalized")
+
+
+def test_ingestion_directories_default_under_data_dir(tmp_path: Path) -> None:
+    config = Config.from_toml(write_config(tmp_path, 'data_dir = "custom-data"'))
+
+    assert config.ingestion.raw_dir == Path("custom-data/raw")
+    assert config.ingestion.normalized_dir == Path("custom-data/normalized")
 
 
 def test_missing_config_is_reported(tmp_path: Path) -> None:
@@ -69,6 +83,11 @@ def test_invalid_toml_is_reported(tmp_path: Path) -> None:
         ("[synthetic]\nn_days = 1", "synthetic.n_days must be >="),
         ("[synthetic]\nstart_date = 'not-a-date'", "ISO date"),
         ("[synthetic]\nextra = 1", "unknown synthetic key"),
+        ("[ingestion]\nmax_attempts = 0", "ingestion.max_attempts must be >="),
+        ("[ingestion]\nretry_backoff_seconds = -1", "must be finite and >= 0"),
+        ("[ingestion]\ntimeout_seconds = 0", "must be finite and >"),
+        ("[ingestion]\nraw_dir = ''", "ingestion.raw_dir must be a non-empty string"),
+        ("[ingestion]\nextra = 1", "unknown ingestion key"),
     ],
 )
 def test_invalid_values_are_rejected(tmp_path: Path, text: str, message: str) -> None:

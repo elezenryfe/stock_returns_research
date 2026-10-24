@@ -22,10 +22,13 @@ _DEFAULT_DATA_DIR = "data"
 _DEFAULT_LOG_LEVEL = "INFO"
 
 _TOP_LEVEL_KEYS = frozenset(
-    {"seed", "horizons", "data_dir", "log_level", "validation", "synthetic"}
+    {"seed", "horizons", "data_dir", "log_level", "validation", "synthetic", "ingestion"}
 )
 _VALIDATION_KEYS = frozenset({"min_price", "max_reported_issues"})
 _SYNTHETIC_KEYS = frozenset({"n_securities", "n_days", "start_date"})
+_INGESTION_KEYS = frozenset(
+    {"raw_dir", "normalized_dir", "max_attempts", "retry_backoff_seconds", "timeout_seconds"}
+)
 _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 
 
@@ -43,6 +46,15 @@ class SyntheticSettings:
 
 
 @dataclass(frozen=True)
+class IngestionSettings:
+    raw_dir: Path = Path("data/raw")
+    normalized_dir: Path = Path("data/normalized")
+    max_attempts: int = 3
+    retry_backoff_seconds: float = 0.5
+    timeout_seconds: float = 30.0
+
+
+@dataclass(frozen=True)
 class Config:
     """Validated application configuration."""
 
@@ -52,6 +64,7 @@ class Config:
     log_level: str = _DEFAULT_LOG_LEVEL
     validation: ValidationSettings = field(default_factory=ValidationSettings)
     synthetic: SyntheticSettings = field(default_factory=SyntheticSettings)
+    ingestion: IngestionSettings = field(default_factory=IngestionSettings)
     source_path: Path | None = field(default=None, compare=False)
 
     @classmethod
@@ -110,6 +123,32 @@ class Config:
             start_date=start_date,
         )
 
+        ingestion_raw = _as_table(raw.get("ingestion", {}), "ingestion")
+        _reject_unknown(ingestion_raw, _INGESTION_KEYS, "ingestion")
+        ingestion = IngestionSettings(
+            raw_dir=Path(
+                _as_text(ingestion_raw.get("raw_dir", str(data_dir / "raw")), "ingestion.raw_dir")
+            ),
+            normalized_dir=Path(
+                _as_text(
+                    ingestion_raw.get("normalized_dir", str(data_dir / "normalized")),
+                    "ingestion.normalized_dir",
+                )
+            ),
+            max_attempts=_as_int(
+                ingestion_raw.get("max_attempts", 3), "ingestion.max_attempts", minimum=1
+            ),
+            retry_backoff_seconds=_as_non_negative_float(
+                ingestion_raw.get("retry_backoff_seconds", 0.5),
+                "ingestion.retry_backoff_seconds",
+            ),
+            timeout_seconds=_as_float(
+                ingestion_raw.get("timeout_seconds", 30.0),
+                "ingestion.timeout_seconds",
+                minimum_exclusive=0.0,
+            ),
+        )
+
         return cls(
             seed=seed,
             horizons=horizons,
@@ -117,6 +156,7 @@ class Config:
             log_level=log_level,
             validation=validation,
             synthetic=synthetic,
+            ingestion=ingestion,
             source_path=source,
         )
 
@@ -148,6 +188,15 @@ def _as_float(value: object, name: str, *, minimum_exclusive: float) -> float:
     result = float(value)
     if not math.isfinite(result) or result <= minimum_exclusive:
         raise ConfigError(f"{name} must be finite and > {minimum_exclusive}, got {value!r}")
+    return result
+
+
+def _as_non_negative_float(value: object, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ConfigError(f"{name} must be a number, got {type(value).__name__}")
+    result = float(value)
+    if not math.isfinite(result) or result < 0.0:
+        raise ConfigError(f"{name} must be finite and >= 0, got {value!r}")
     return result
 
 

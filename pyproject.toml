@@ -4,13 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stock-returns"
-version = "0.1.0"
+version = "0.2.0"
 description = "Point-in-time research platform for ranking US stocks by expected returns"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "numpy>=1.26,<3",
     "pandas>=2.2,<3",
+    "pyarrow>=17,<30",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +31,9 @@ where = ["src"]
 testpaths = ["tests"]
 addopts = "-ra"
 pythonpath = ["src"]
+markers = [
+    "integration: requires network access and provider credentials",
+]
 
 [tool.ruff]
 line-length = 100

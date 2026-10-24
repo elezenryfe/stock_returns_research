@@ -99,3 +99,95 @@ def test_argparse_rejects_nonpositive_days(config_path: Path) -> None:
         main(["--config", str(config_path), "generate-synthetic", "--days", "0"])
 
     assert exc_info.value.code == 2
+
+
+def test_ingest_csv_then_coverage(
+    tmp_path: Path, csv_source_dir: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config_path = write_config(tmp_path, tmp_path / "data")
+    ingest_args = [
+        "--config",
+        str(config_path),
+        "ingest",
+        "--provider",
+        "csv",
+        "--input",
+        str(csv_source_dir),
+        "--start",
+        "2023-01-02",
+        "--end",
+        "2023-12-31",
+    ]
+
+    assert main(ingest_args) == 0
+    output = capsys.readouterr().out
+    assert "ingested csv run" in output
+    assert "36 row(s) received, 36 new, 36 total, 3 securities" in output
+
+    assert main(ingest_args) == 0
+    output = capsys.readouterr().out
+    assert "36 row(s) received, 0 new, 36 total" in output
+
+    assert main(["--config", str(config_path), "coverage", "--limit", "2"]) == 0
+    output = capsys.readouterr().out
+    assert output.startswith("coverage: 3 securities, 36 price rows,")
+    assert "... 1 more (use --limit)" in output
+
+
+def test_ingest_csv_requires_input(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    config_path = write_config(tmp_path, tmp_path / "data")
+
+    exit_code = main(
+        [
+            "--config",
+            str(config_path),
+            "ingest",
+            "--provider",
+            "csv",
+            "--start",
+            "2023-01-02",
+            "--end",
+            "2023-12-31",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "--input is required" in captured.err
+
+
+def test_ingest_tiingo_requires_api_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("TIINGO_API_KEY", raising=False)
+    config_path = write_config(tmp_path, tmp_path / "data")
+
+    exit_code = main(
+        [
+            "--config",
+            str(config_path),
+            "ingest",
+            "--provider",
+            "tiingo",
+            "--symbols",
+            "AAPL",
+            "--start",
+            "2023-01-02",
+            "--end",
+            "2023-12-31",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "TIINGO_API_KEY" in captured.err
+
+
+def test_coverage_without_ingested_data(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    config_path = write_config(tmp_path, tmp_path / "data")
+
+    exit_code = main(["--config", str(config_path), "coverage"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "no normalized dataset" in captured.err

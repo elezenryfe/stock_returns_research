@@ -26,3 +26,11 @@ class DataValidationError(StockReturnsError):
         self.issues = list(issues)
         detail = "\n".join(f"  - {issue}" for issue in self.issues)
         super().__init__(f"{len(self.issues)} validation issue(s):\n{detail}")
+
+
+class IngestionError(StockReturnsError):
+    """Data ingestion failed before a normalized dataset was committed."""
+
+
+class ProviderError(IngestionError):
+    """A data provider is unavailable, misconfigured, or returned invalid payloads."""
