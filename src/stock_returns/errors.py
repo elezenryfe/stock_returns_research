@@ -34,3 +34,7 @@ class IngestionError(StockReturnsError):
 
 class ProviderError(IngestionError):
     """A data provider is unavailable, misconfigured, or returned invalid payloads."""
+
+
+class TrainingError(StockReturnsError):
+    """Feature/label construction or model training failed on invalid input."""

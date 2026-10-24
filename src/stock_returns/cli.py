@@ -1,4 +1,4 @@
-"""Command-line interface: health, synthetic data, ingestion, validation, coverage."""
+"""Command-line interface: health, synthetic data, ingestion, training, validation."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from .errors import IngestionError, StockReturnsError
 from .ingestion import CsvProvider, TiingoProvider, coverage_frame, ingest, read_normalized
 from .logging_utils import configure_logging
 from .synthetic import generate_synthetic_dataset, write_dataset
+from .training import read_price_table, run_training
 from .validation import validate_dataset
 
 DEFAULT_CONFIG_PATH = Path("configs/default.toml")
@@ -59,10 +60,20 @@ def _symbol_list(text: str) -> tuple[str, ...]:
     return symbols
 
 
+def _fraction(text: str) -> float:
+    try:
+        value = float(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected a number, got {text!r}") from exc
+    if not 0.0 < value < 1.0:
+        raise argparse.ArgumentTypeError(f"must be strictly between 0 and 1, got {value}")
+    return value
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="stock-returns",
-        description="Research-only stock return platform (Phase 2 ingestion).",
+        description="Research-only stock return platform (Phase 3 training).",
     )
     parser.add_argument(
         "--config",
@@ -105,6 +116,21 @@ def build_parser() -> argparse.ArgumentParser:
     coverage.add_argument(
         "--limit", type=_positive_int, default=25, help="securities to list (default: 25)"
     )
+
+    train = subparsers.add_parser(
+        "train", help="build point-in-time features/labels and fit baseline models"
+    )
+    train.add_argument(
+        "--prices",
+        type=Path,
+        help="price CSV or Parquet (default: <data_dir>/synthetic/prices.csv)",
+    )
+    train.add_argument("--out", type=Path, help="output directory (default: from config)")
+    train.add_argument(
+        "--train-fraction",
+        type=_fraction,
+        help="chronological training fraction in (0, 1) (default: from config)",
+    )
     return parser
 
 
@@ -118,6 +144,10 @@ def _health(config: Config) -> int:
         "seed": config.seed,
         "horizons": list(config.horizons),
         "data_dir": str(config.data_dir),
+        "training": {
+            "output_dir": str(config.training.output_dir),
+            "train_fraction": config.training.train_fraction,
+        },
     }
     print(json.dumps(payload, indent=2))
     return 0
@@ -225,6 +255,40 @@ def _coverage(config: Config, args: argparse.Namespace) -> int:
     return 0
 
 
+def _format_metric(value: float | int | None) -> str:
+    return "n/a" if value is None else f"{value:.4f}"
+
+
+def _train(config: Config, args: argparse.Namespace) -> int:
+    default_dir = config.data_dir / "synthetic"
+    prices_path = args.prices if args.prices is not None else default_dir / "prices.csv"
+    prices = read_price_table(prices_path)
+    result = run_training(
+        prices,
+        config=config,
+        output_dir=args.out,
+        train_fraction=args.train_fraction,
+        dataset_path=prices_path,
+    )
+
+    print(
+        f"experiment {result.experiment_id}: "
+        f"{result.train_rows} train / {result.test_rows} test rows across horizons"
+    )
+    for horizon, horizon_metrics in result.metrics.items():
+        for model_id, metrics in horizon_metrics.items():
+            print(
+                f"  horizon {horizon:>3}  {model_id:<8}  "
+                f"rows={metrics['n_predictions']:>5}  "
+                f"rmse={_format_metric(metrics['rmse'])}  "
+                f"rank_ic={_format_metric(metrics['mean_daily_rank_ic'])}  "
+                f"hit_rate={_format_metric(metrics['hit_rate'])}"
+            )
+    print(f"  predictions: {result.predictions_path}")
+    print(f"  manifest:    {result.manifest_path}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
@@ -240,6 +304,8 @@ def main(argv: list[str] | None = None) -> int:
             return _ingest(config, args)
         if args.command == "coverage":
             return _coverage(config, args)
+        if args.command == "train":
+            return _train(config, args)
         raise AssertionError(f"unhandled command: {args.command}")
     except StockReturnsError as exc:
         print(f"error: {exc}", file=sys.stderr)

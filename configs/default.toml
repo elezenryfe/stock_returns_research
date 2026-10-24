@@ -34,3 +34,11 @@ max_attempts = 3
 # Exponential backoff base in seconds between attempts.
 retry_backoff_seconds = 0.5
 timeout_seconds = 30.0
+
+[training]
+# Experiment artifacts: predictions.parquet and manifest.json per run.
+output_dir = "data/models"
+# Fraction of labeled trading dates used for training. The remainder is a
+# chronological holdout; training labels that mature after the holdout starts
+# are purged.
+train_fraction = 0.7

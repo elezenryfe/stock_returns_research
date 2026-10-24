@@ -92,8 +92,9 @@ change. Selection should follow a license and coverage check.
 - Provider adjustments are revised retroactively. Raw snapshots preserve the
   retrieved revision, but the normalized dataset stores the latest revision and
   does not reconstruct historical vintages.
-- Daily bars do not yet carry an `available_at` timestamp. Phase 3 must apply
-  market-close availability rules before a bar can be used at a forecast time.
+- Daily bars are treated as available at 21:00 UTC on their exchange trading
+  date (Phase 3), after the US regular close. This is a conservative daily
+  convention, not an intraday timestamp from the provider.
 - Index membership, exchange listing changes, and ticker reuse are not modeled.
   Current `security_id` values are provisional `provider:symbol` ids unless a
   vendor supplies a permanent id in `securities.csv`.

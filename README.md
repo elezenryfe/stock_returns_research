@@ -6,16 +6,19 @@ advice**, and it makes no claim that any model can beat the market.
 
 ## Status
 
-**Phase 2 — historical price ingestion — complete.** The repository can ingest
-daily prices through provider adapters into immutable raw snapshots and a
-validated, provenance-tracked normalized dataset. Features, labels, models, and
-backtests do not exist yet.
+**Phase 3 — features, labels, and the first predictive baselines — complete.**
+The repository can ingest daily prices, build point-in-time features and
+21/42/63-trading-day forward-return labels, fit a momentum baseline, ridge
+regression, and histogram gradient boosting on a chronological holdout, and
+persist predictions with a reproducibility manifest.
 
-Bundled test data is synthetic. Any ingested source data is subject to that
-provider's coverage and licensing; see
-[docs/DATA_SOURCES.md](docs/DATA_SOURCES.md).
+This is still **research software, not a backtest**: there is no walk-forward
+loop, portfolio, execution model, or transaction cost yet. Bundled test data is
+synthetic and carries no market signal. Metrics computed from it verify the
+pipeline only.
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) for the phase plan and
+See [docs/MODELING.md](docs/MODELING.md) for feature, label, split, metric, and
+artifact conventions; [docs/ROADMAP.md](docs/ROADMAP.md) for the phase plan; and
 [docs/DECISIONS.md](docs/DECISIONS.md) for the decision log.
 
 ## Requirements
@@ -124,6 +127,43 @@ Reports per-security row counts, first/last dates, and missing weekdays.
 Exchange holidays count as missing weekdays; this is a gap detector, not a
 trading-calendar audit.
 
+### 6. Build features/labels and train baseline models
+
+On the generated synthetic data (fully offline):
+
+```bash
+uv run stock-returns --config configs/default.toml generate-synthetic
+uv run stock-returns --config configs/default.toml train
+```
+
+On an ingested normalized dataset:
+
+```bash
+uv run stock-returns --config configs/default.toml train \
+  --prices data/normalized/prices.parquet \
+  --out data/models
+```
+
+The command builds trailing price/volume features, 21/42/63-trading-day forward
+excess-return labels, a momentum baseline, ridge regression, and histogram
+gradient boosting. It uses a single chronological split (default 70% train),
+purges training labels that mature after the test start, fits preprocessing on
+training rows only, and writes:
+
+```
+data/models/<experiment_id>/predictions.parquet   predictions and realized outcomes
+data/models/<experiment_id>/manifest.json         dataset hash, config, split, metrics
+```
+
+The printed rank IC, RMSE, and hit rate are holdout diagnostics. Synthetic
+results are noise and must not be interpreted as predictive skill. Full
+conventions and limitations are in [docs/MODELING.md](docs/MODELING.md).
+
+`--prices` accepts CSV or Parquet. `adj_close` is used automatically when
+present; otherwise the training run falls back to `close`, records that choice
+in the manifest, and should only be used for synthetic or corporate-action-free
+data.
+
 ### Storage and provenance
 
 ```
@@ -173,10 +213,13 @@ Windows with Python 3.11 it installs from `uv.lock`, then runs:
 ```
 configs/default.toml          Documented, validated configuration
 src/stock_returns/
-  cli.py                      health, synthetic, validate, ingest, coverage
+  cli.py                      health, synthetic, validate, ingest, coverage, train
   config.py                   Typed TOML loading; rejects unknown keys
   contracts.py                Security, Observation, Feature, Label,
                               Prediction, ExperimentRecord
+  features.py                 Point-in-time trailing price/volume features
+  labels.py                   Forward returns, equal-weight benchmark, availability
+  training.py                 Dataset assembly, purge, models, metrics, artifacts
   validation.py               Price/security schema and quality checks
   synthetic.py                Deterministic synthetic dataset
   seeding.py                  Explicit-seed RNG convention
@@ -191,6 +234,7 @@ src/stock_returns/
     pipeline.py               Fetch → snapshot → merge → validate → commit
     coverage.py               Coverage and gap summary
 tests/                        Offline unit/integration/CLI tests; live test gated
+docs/MODELING.md              Feature, label, split, model, and artifact conventions
 docs/DATA_SOURCES.md          Provider evaluation, coverage, licensing caveats
 docs/ROADMAP.md               Phased plan and status
 docs/DECISIONS.md             Architecture decision log
@@ -208,20 +252,35 @@ docs/DECISIONS.md             Architecture decision log
   as a survivorship-safe security master.
 - **Prices:** normalized `open/high/low/close/volume` are as reported by the
   provider (unadjusted); `adj_close` is split- and dividend-adjusted and is
-  required. Total-return labels must use `adj_close`.
-- **Daily bars are labeled by exchange trading date.** Provider data does not yet
-  carry an `available_at` timestamp; Phase 3 must apply the correct market-close
-  availability rule before using bars in a forecast.
+  required. Total-return labels use `adj_close`. Training falls back to `close`
+  only when `adj_close` is absent (the synthetic dataset) and records that in
+  the run manifest.
+- **Availability:** a daily bar dated D is treated as available at 21:00 UTC on
+  D, after the US regular session closes in both EST and EDT. All features at D
+  use bars dated D or earlier. No bar is forward-filled.
+- **Labels:** forward return from close D to close D+h (h = 21/42/63 trading
+  days). The benchmark is the equal-weight mean of the same-horizon forward
+  returns of all labeled securities; the model target is the difference. Labels
+  mature at 21:00 UTC on D+h, overlap across dates, and training rows whose
+  labels mature after the test start are purged.
 - **Synthetic calendar** is weekdays only and ignores US market holidays.
 - **Forecast horizons** are 21, 42, and 63 trading days, approximating 1, 2, and
   3 calendar months.
 - **Randomness** uses an explicitly seeded `numpy.random.Generator`; pipeline
-  code must not use global RNG state.
+  code must not use global RNG state. Model fits receive the configured seed.
 
 ## Known limitations
 
-- No features, labels, model, ranking, or backtest exists yet; `Label` and
-  `Prediction` are contracts only.
+- The training pipeline uses one chronological holdout, not a walk-forward
+  backtest. It has no transaction costs, slippage, execution model, portfolio
+  construction, or risk controls. It does not establish out-of-sample skill.
+- Predictions are trained on excess returns versus an equal-weight universe
+  benchmark, not an investable index. `prob_positive` and
+  `expected_volatility` are uncalibrated approximations.
+- Only price/volume features exist; there are no fundamentals, news, or company
+  relationships. No liquidity or index-membership screen is applied.
+- Fitted model objects are not persisted. Reproducibility relies on the input
+  dataset hash, configuration hash, and package version in the manifest.
 - No live ingestion has been verified against a provider in this repository:
   the Tiingo adapter is tested with mocked responses, and the live test is
   skipped without credentials.
@@ -236,4 +295,4 @@ docs/DECISIONS.md             Architecture decision log
 - Data licensing is the user's responsibility; evaluated providers are for
   internal research use and restrict redistribution.
 - Local verification has been on Windows with Python 3.11; CI covers Ubuntu and
-  Windows but has not yet run after the Phase 2 changes.
+  Windows but has not yet run after the Phase 3 changes.

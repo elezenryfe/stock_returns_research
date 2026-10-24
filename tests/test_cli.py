@@ -191,3 +191,56 @@ def test_coverage_without_ingested_data(tmp_path: Path, capsys: pytest.CaptureFi
     captured = capsys.readouterr()
     assert exit_code == 1
     assert "no normalized dataset" in captured.err
+
+
+def test_train_runs_on_synthetic_data(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    config_path = write_config(tmp_path, tmp_path / "data")
+    assert (
+        main(
+            [
+                "--config",
+                str(config_path),
+                "generate-synthetic",
+                "--securities",
+                "4",
+                "--days",
+                "260",
+                "--seed",
+                "5",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    out_dir = tmp_path / "models"
+    exit_code = main(["--config", str(config_path), "train", "--out", str(out_dir)])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "experiment " in captured.out
+    assert "horizon  21" in captured.out
+    assert "hist-gbm" in captured.out
+    run_dirs = list(out_dir.iterdir())
+    assert len(run_dirs) == 1
+    assert (run_dirs[0] / "predictions.parquet").is_file()
+    assert (run_dirs[0] / "manifest.json").is_file()
+
+
+def test_train_without_synthetic_data_exits_nonzero(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config_path = write_config(tmp_path, tmp_path / "data")
+
+    exit_code = main(["--config", str(config_path), "train"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "generate-synthetic" in captured.err
+
+
+def test_train_rejects_invalid_fraction(config_path: Path) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--config", str(config_path), "train", "--train-fraction", "1.5"])
+
+    assert exc_info.value.code == 2

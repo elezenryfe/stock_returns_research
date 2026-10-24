@@ -29,6 +29,8 @@ def test_project_config_loads(config_path: Path) -> None:
     assert config.ingestion.max_attempts == 3
     assert config.ingestion.retry_backoff_seconds == 0.5
     assert config.ingestion.timeout_seconds == 30.0
+    assert config.training.output_dir == Path("data/models")
+    assert config.training.train_fraction == 0.7
     assert config.source_path == config_path
 
 
@@ -43,6 +45,8 @@ def test_empty_config_uses_documented_defaults(tmp_path: Path) -> None:
     assert config.synthetic.n_securities == 8
     assert config.ingestion.raw_dir == Path("data/raw")
     assert config.ingestion.normalized_dir == Path("data/normalized")
+    assert config.training.output_dir == Path("data/models")
+    assert config.training.train_fraction == 0.7
 
 
 def test_ingestion_directories_default_under_data_dir(tmp_path: Path) -> None:
@@ -50,6 +54,7 @@ def test_ingestion_directories_default_under_data_dir(tmp_path: Path) -> None:
 
     assert config.ingestion.raw_dir == Path("custom-data/raw")
     assert config.ingestion.normalized_dir == Path("custom-data/normalized")
+    assert config.training.output_dir == Path("custom-data/models")
 
 
 def test_missing_config_is_reported(tmp_path: Path) -> None:
@@ -88,6 +93,11 @@ def test_invalid_toml_is_reported(tmp_path: Path) -> None:
         ("[ingestion]\ntimeout_seconds = 0", "must be finite and >"),
         ("[ingestion]\nraw_dir = ''", "ingestion.raw_dir must be a non-empty string"),
         ("[ingestion]\nextra = 1", "unknown ingestion key"),
+        ("[training]\ntrain_fraction = 0", "training.train_fraction must be strictly"),
+        ("[training]\ntrain_fraction = 1", "training.train_fraction must be strictly"),
+        ("[training]\ntrain_fraction = 'x'", "training.train_fraction must be a number"),
+        ("[training]\noutput_dir = ''", "training.output_dir must be a non-empty string"),
+        ("[training]\nextra = 1", "unknown training key"),
     ],
 )
 def test_invalid_values_are_rejected(tmp_path: Path, text: str, message: str) -> None:

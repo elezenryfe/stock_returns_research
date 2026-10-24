@@ -7,7 +7,7 @@ verification and an explicit approval request.
 |-------|-------|--------|
 | 1 | Foundation: structure, config, contracts, synthetic data, validation, CLI, tests | **Complete** — 2026-10-24 |
 | 2 | Historical data ingestion and storage; provider adapters; provenance | **Complete** — 2026-10-24 (live provider verification pending credentials) |
-| 3 | Point-in-time features; 21/42/63-day labels; baseline and gradient-boosted models | Not started |
+| 3 | Point-in-time features; 21/42/63-day labels; baseline and gradient-boosted models | **Complete** — 2026-10-24 |
 | 4 | Chronological walk-forward backtesting and benchmark evaluation | Not started |
 | 5 | Point-in-time fundamentals (e.g. SEC EDGAR/XBRL), with coverage caveats | Not started |
 | 6 | Financial text and event extraction with publication timestamps | Not started |
@@ -50,11 +50,44 @@ fundamentals, news, and any survivorship-free claim.
 - Credentials are not required for the offline suite; `TIINGO_API_KEY` enables
   optional live verification.
 
-## Phase 3 prerequisites
+## Phase 3 acceptance criteria
+
+- [x] Point-in-time trailing features use only bars dated on or before the
+  forecast date; missing bars are not filled.
+- [x] 21/42/63-trading-day forward returns, equal-weight benchmark returns, and
+  excess-return labels are defined with explicit availability timestamps.
+- [x] Overlapping labels are handled with a chronological split that purges
+  training rows whose labels mature after the test start.
+- [x] A momentum rule, ridge regression, and histogram gradient boosting run on
+  identical chronological splits.
+- [x] Preprocessing is fitted inside the training pipeline on training rows only.
+- [x] Predictions use a documented schema and are aligned to the correct dates.
+- [x] Dataset hash, config hash, feature definitions, label convention, split
+  boundaries, model hyperparameters, and metrics are persisted in a manifest.
+- [x] The deterministic `train` command runs on synthetic data; tests cover
+  feature math, label alignment, temporal integrity, purge behavior,
+  preprocessing isolation, output schema, and reproducibility.
+- [x] Conventions and limitations are documented in
+  [MODELING.md](MODELING.md).
+
+The synthetic metrics prove the pipeline runs, not that the models predict
+returns. A single holdout is not a backtest.
+
+## Phase 3 prerequisites (met)
 
 - Approval to proceed.
-- A decision on the research universe and whether to ingest real data with a
-  chosen licensed provider or continue with synthetic data for pipeline tests.
-- Definition of the label return convention (adjusted close total return vs
-  benchmark excess return) and the trading calendar.
+- A label convention (close-to-close adjusted return, equal-weight universe
+  benchmark, 21:00 UTC availability) and a trading-calendar convention.
+- A decision to keep synthetic data for pipeline verification while real data
+  ingestion remains available through the Phase 2 provider adapters.
+
+## Phase 4 prerequisites
+
+- Approval to proceed.
+- A walked-forward evaluation design: retraining cadence, training window,
+  purge/embargo rules for overlapping labels, and the evaluation calendar.
+- Explicit execution assumptions (decision time, fill price, costs, slippage,
+  turnover) and benchmark definitions.
+- A policy for reporting results by period and market regime, and for avoiding
+  repeated selection on the final test period.
 

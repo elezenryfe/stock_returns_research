@@ -22,13 +22,23 @@ _DEFAULT_DATA_DIR = "data"
 _DEFAULT_LOG_LEVEL = "INFO"
 
 _TOP_LEVEL_KEYS = frozenset(
-    {"seed", "horizons", "data_dir", "log_level", "validation", "synthetic", "ingestion"}
+    {
+        "seed",
+        "horizons",
+        "data_dir",
+        "log_level",
+        "validation",
+        "synthetic",
+        "ingestion",
+        "training",
+    }
 )
 _VALIDATION_KEYS = frozenset({"min_price", "max_reported_issues"})
 _SYNTHETIC_KEYS = frozenset({"n_securities", "n_days", "start_date"})
 _INGESTION_KEYS = frozenset(
     {"raw_dir", "normalized_dir", "max_attempts", "retry_backoff_seconds", "timeout_seconds"}
 )
+_TRAINING_KEYS = frozenset({"output_dir", "train_fraction"})
 _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
 
 
@@ -55,6 +65,12 @@ class IngestionSettings:
 
 
 @dataclass(frozen=True)
+class TrainingSettings:
+    output_dir: Path = Path("data/models")
+    train_fraction: float = 0.7
+
+
+@dataclass(frozen=True)
 class Config:
     """Validated application configuration."""
 
@@ -65,6 +81,7 @@ class Config:
     validation: ValidationSettings = field(default_factory=ValidationSettings)
     synthetic: SyntheticSettings = field(default_factory=SyntheticSettings)
     ingestion: IngestionSettings = field(default_factory=IngestionSettings)
+    training: TrainingSettings = field(default_factory=TrainingSettings)
     source_path: Path | None = field(default=None, compare=False)
 
     @classmethod
@@ -149,6 +166,20 @@ class Config:
             ),
         )
 
+        training_raw = _as_table(raw.get("training", {}), "training")
+        _reject_unknown(training_raw, _TRAINING_KEYS, "training")
+        training = TrainingSettings(
+            output_dir=Path(
+                _as_text(
+                    training_raw.get("output_dir", str(data_dir / "models")),
+                    "training.output_dir",
+                )
+            ),
+            train_fraction=_as_fraction(
+                training_raw.get("train_fraction", 0.7), "training.train_fraction"
+            ),
+        )
+
         return cls(
             seed=seed,
             horizons=horizons,
@@ -157,6 +188,7 @@ class Config:
             validation=validation,
             synthetic=synthetic,
             ingestion=ingestion,
+            training=training,
             source_path=source,
         )
 
@@ -197,6 +229,15 @@ def _as_non_negative_float(value: object, name: str) -> float:
     result = float(value)
     if not math.isfinite(result) or result < 0.0:
         raise ConfigError(f"{name} must be finite and >= 0, got {value!r}")
+    return result
+
+
+def _as_fraction(value: object, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ConfigError(f"{name} must be a number, got {type(value).__name__}")
+    result = float(value)
+    if not math.isfinite(result) or not 0.0 < result < 1.0:
+        raise ConfigError(f"{name} must be strictly between 0 and 1, got {value!r}")
     return result
 
 

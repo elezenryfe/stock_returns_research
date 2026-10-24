@@ -49,3 +49,4 @@ jobs:
           uv run stock-returns --config configs/default.toml health
           uv run stock-returns --config configs/default.toml generate-synthetic
           uv run stock-returns --config configs/default.toml validate
+          uv run stock-returns --config configs/default.toml train
