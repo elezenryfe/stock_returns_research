@@ -1,0 +1,26 @@
+# Stock Returns research configuration.
+# Relative paths resolve from the directory where the CLI is invoked.
+
+# Seed for reproducible synthetic data and, later, model experiments.
+seed = 7
+
+# Forward-return horizons in trading days (~1, 2, and 3 months).
+horizons = [21, 42, 63]
+
+# Root directory for generated data.
+data_dir = "data"
+
+# DEBUG | INFO | WARNING | ERROR | CRITICAL
+log_level = "INFO"
+
+[validation]
+# Minimum allowed price for a price bar.
+min_price = 0.01
+# Maximum number of problems listed in one validation error.
+max_reported_issues = 20
+
+[synthetic]
+# Defaults for the `generate-synthetic` command; the CLI can override them.
+n_securities = 8
+n_days = 260
+start_date = "2023-01-02"
